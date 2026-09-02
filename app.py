@@ -1,111 +1,57 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import numpy as np
 
-# Set Streamlit Page Config
-st.set_page_config(
-    page_title="Superstore Sales Dashboard",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="End-to-End Superstore Sales & Customer Insights Capstone", layout="wide")
 
-st.title("📊 Superstore Sales & Analytics Dashboard")
-st.markdown("Explore key business metrics, sales distributions, and performance insights.")
+st.title("📈 End-to-End Superstore Sales & Customer Insights Capstone")
+st.markdown("### Executive Overview & Key Performance Indicators")
 
-# --- USE CACHING FOR EXPENSIVE DATA LOADING ---
 @st.cache_data
 def load_data():
-    np.random.seed(42)
-    categories = ['Furniture', 'Office Supplies', 'Technology']
-    regions = ['East', 'West', 'Central', 'South']
-    
-    dates = pd.date_range(start="2025-01-01", periods=200, freq="D")
-    data = []
-    for _ in range(300):
-        data.append({
-            "Order Date": np.random.choice(dates),
-            "Category": np.random.choice(categories),
-            "Region": np.random.choice(regions),
-            "Sales": round(np.random.uniform(20.0, 500.0), 2),
-            "Profit": round(np.random.uniform(-50.0, 150.0), 2),
-            "Quantity": np.random.randint(1, 10)
-        })
-    return pd.DataFrame(data)
+    df = pd.read_csv("data/cleaned_superstore.csv")
+    df['Order_Date'] = pd.to_datetime(df['Order_Date'])
+    return df
 
-df = load_data()
+try:
+    df = load_data()
 
-# --- INTERACTIVE FILTERS (SIDEBAR) ---
-st.sidebar.header("Filter Options")
+    # Sidebar Filters
+    st.sidebar.header("Filter Data")
+    region_filter = st.sidebar.multiselect("Select Region", options=df['Region'].unique(), default=df['Region'].unique())
+    category_filter = st.sidebar.multiselect("Select Category", options=df['Category'].unique(), default=df['Category'].unique())
 
-region_filter = st.sidebar.multiselect(
-    "Select Region:",
-    options=df["Region"].unique(),
-    default=df["Region"].unique()
-)
+    filtered_df = df[(df['Region'].isin(region_filter)) & (df['Category'].isin(category_filter))]
 
-category_filter = st.sidebar.multiselect(
-    "Select Category:",
-    options=df["Category"].unique(),
-    default=df["Category"].unique()
-)
+    if filtered_df.empty:
+        st.warning("No data available for the selected filters.")
+    else:
+        # 8 Core KPIs Display
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Gross Revenue", f"${filtered_df['Sales'].sum():,.2f}")
+        col2.metric("Net Revenue", f"${filtered_df['Net_Revenue'].sum():,.2f}")
+        col3.metric("Total Profit", f"${filtered_df['Profit'].sum():,.2f}")
+        col4.metric("Avg Profit Margin", f"{filtered_df['Profit_Margin'].mean():.2f}%")
 
-# Apply Filters
-filtered_df = df[(df["Region"].isin(region_filter)) & (df["Category"].isin(category_filter))]
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("Total Orders", f"{filtered_df['Order_ID'].nunique():,}")
+        col6.metric("Units Sold", f"{filtered_df['Quantity'].sum():,}")
+        col7.metric("Avg CSAT Score", f"{filtered_df['Customer_Satisfaction_Score'].mean():.2f} / 5.0")
+        col8.metric("Return Rate", f"{(filtered_df['Return_Status'].value_counts(normalize=True).get('Yes', 0) * 100):.2f}%")
 
-# --- HANDLE EMPTY FILTER RESULTS GRACEFULLY ---
-if filtered_df.empty:
-    st.warning("⚠️ No data available for the selected filters. Please adjust your criteria on the sidebar.")
-    st.stop()
+        st.markdown("---")
 
-# --- KPI SECTION ---
-st.markdown("### 📈 Key Performance Indicators (KPIs)")
-col1, col2, col3, col4 = st.columns(4)
+        # Visualizations
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.subheader("Net Revenue by Category")
+            fig_cat = px.bar(filtered_df, x='Category', y='Net_Revenue', color='Category', title="Net Revenue by Product Category")
+            st.plotly_chart(fig_cat, use_container_width=True)
 
-total_sales = filtered_df["Sales"].sum()
-total_profit = filtered_df["Profit"].sum()
-total_orders = len(filtered_df)
-avg_order_value = filtered_df["Sales"].mean()
+        with col_right:
+            st.subheader("Profitability vs Discount")
+            fig_disc = px.scatter(filtered_df, x='Discount', y='Profit_Margin', color='Category', hover_data=['Order_ID'], title="Discount Impact on Profit Margin")
+            st.plotly_chart(fig_disc, use_container_width=True)
 
-col1.metric("Total Revenue", f"${total_sales:,.2f}")
-col2.metric("Total Profit", f"${total_profit:,.2f}")
-col3.metric("Total Orders", f"{total_orders}")
-col4.metric("Avg Order Value", f"${avg_order_value:,.2f}")
-
-st.divider()
-
-# --- DYNAMIC VISUALIZATIONS ---
-st.markdown("### 📊 Business Analytics & Visualizations")
-
-chart_col1, chart_col2 = st.columns(2)
-
-with chart_col1:
-    sales_time = filtered_df.groupby("Order Date")["Sales"].sum().reset_index()
-    fig_time = px.line(sales_time, x="Order Date", y="Sales", title="Sales Trend Over Time", template="plotly_white")
-    st.plotly_chart(fig_time, use_container_width=True)
-
-with chart_col2:
-    sales_cat = filtered_df.groupby("Category")["Sales"].sum().reset_index()
-    fig_cat = px.bar(sales_cat, x="Category", y="Sales", color="Category", title="Total Sales by Category", template="plotly_white")
-    st.plotly_chart(fig_cat, use_container_width=True)
-
-fig_scatter = px.scatter(
-    filtered_df, x="Sales", y="Profit", color="Category", hover_data=["Region"],
-    title="Sales vs. Profit Margin Distribution", template="plotly_white"
-)
-st.plotly_chart(fig_scatter, use_container_width=True)
-
-st.divider()
-
-# --- PREDICTION FORM / ANALYTICAL SUMMARY ---
-st.markdown("### 🔮 Quick Profit Predictor")
-st.write("Estimate anticipated profit based on sale conditions:")
-
-pred_col1, pred_col2 = st.columns(2)
-with pred_col1:
-    input_sales = st.number_input("Enter Sales Amount ($)", min_value=1.0, value=100.0)
-with pred_col2:
-    input_qty = st.number_input("Enter Item Quantity", min_value=1, value=2)
-
-estimated_profit = input_sales * 0.22 - (input_qty * 1.5)
-st.success(f"**Estimated Projected Profit:** ${estimated_profit:.2f}")
+except FileNotFoundError:
+    st.error("Data file not found! Please run `python3 generate_data.py` first.")
